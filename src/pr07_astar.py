@@ -1,9 +1,36 @@
 import heapq
 import math
+import sys
+
+
+def astar(graph, start, goal, h):
+    open_set = [(h[start], start)]
+    g = {start: 0}
+    came_from = {}
+    order = []
+    closed = set()
+    while open_set:
+        _, u = heapq.heappop(open_set)
+        if u in closed:
+            continue
+        closed.add(u)
+        order.append(u)
+        if u == goal:
+            path = [u]
+            while u in came_from:
+                u = came_from[u]
+                path.append(u)
+            return path[::-1], g[goal], order
+        for v, w in graph[u]:
+            ng = g[u] + w
+            if v not in g or ng < g[v]:
+                g[v] = ng
+                came_from[v] = u
+                heapq.heappush(open_set, (ng + h[v], v))
+    return None, float("inf"), order
 
 
 def dijkstra_all(graph, start):
-    """Дейкстра от вершины start до всех вершин (для проверки допустимости)."""
     dist = {start: 0}
     pq = [(0, start)]
     while pq:
@@ -11,88 +38,91 @@ def dijkstra_all(graph, start):
         if d > dist[u]:
             continue
         for v, w in graph[u]:
-            nd = d + w
-            if v not in dist or nd < dist[v]:
-                dist[v] = nd
-                heapq.heappush(pq, (nd, v))
+            if v not in dist or d + w < dist[v]:
+                dist[v] = d + w
+                heapq.heappush(pq, (d + w, v))
     return dist
 
 
-def astar_graph(graph, start, goal, h_dict):
-    """Простая реализация A* для взвешенного графа с подсчётом исследованных вершин."""
-    open_set = [(h_dict[start], start)]
-    g_score = {start: 0}
+def astar_grid(grid, start, goal, mode):
+    n, m = len(grid), len(grid[0])
+
+    # манхэттенская оценка подходит для четырёх направлений, евклидова - тоже допустимая
+    def h(pos):
+        dr, dc = abs(pos[0] - goal[0]), abs(pos[1] - goal[1])
+        if mode == "manhattan":
+            return dr + dc
+        if mode == "euclid":
+            return math.hypot(dr, dc)
+        return 0
+
+    open_set = [(h(start), start)]
+    g = {start: 0}
     came_from = {}
-    explored = []
-    visited = set()
-
+    closed = set()
     while open_set:
-        _, current = heapq.heappop(open_set)
-        if current in visited:
+        _, cur = heapq.heappop(open_set)
+        if cur in closed:
             continue
-        visited.add(current)
-        explored.append(current)
-
-        if current == goal:
-            path = [current]
-            while current in came_from:
-                current = came_from[current]
-                path.append(current)
-            return path[::-1], g_score[goal], explored
-
-        for nb, w in graph[current]:
-            tentative_g = g_score[current] + w
-            if nb not in g_score or tentative_g < g_score[nb]:
-                came_from[nb] = current
-                g_score[nb] = tentative_g
-                f = tentative_g + h_dict[nb]
-                heapq.heappush(open_set, (f, nb))
-
-    return None, float("inf"), explored
+        closed.add(cur)
+        if cur == goal:
+            path = [cur]
+            while cur in came_from:
+                cur = came_from[cur]
+                path.append(cur)
+            return path[::-1], g[goal], len(closed)
+        for dr, dc in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+            nb = (cur[0] + dr, cur[1] + dc)
+            if not (0 <= nb[0] < n and 0 <= nb[1] < m) or grid[nb[0]][nb[1]] == "#":
+                continue
+            ng = g[cur] + 1
+            if nb not in g or ng < g[nb]:
+                g[nb] = ng
+                came_from[nb] = cur
+                heapq.heappush(open_set, (ng + h(nb), nb))
+    return None, float("inf"), len(closed)
 
 
-# --- Задание 1: A* на взвешенном графе ---
-def task1_weighted_astar():
-    print("=" * 60)
-    print("Задание 1. A* на взвешенном графе (A -> T)")
+def print_maze(grid, path):
+    for r, row in enumerate(grid):
+        cells = ["*" if (r, c) in path and ch == "." else ch for c, ch in enumerate(row)]
+        print("   " + " ".join(cells))
+
+
+def task_1():
+    print("Задание 1. A* на взвешенном графе, путь A -> T")
     graph = {
         "A": [("B", 3), ("C", 5)],
-        "B": [("A", 3), ("D", 4), ("E", 7)],
+        "B": [("A", 3), ("D", 4), ("E", 1)],
         "C": [("A", 5), ("D", 2), ("F", 6)],
         "D": [("B", 4), ("C", 2), ("E", 3), ("G", 8)],
-        "E": [("B", 7), ("D", 3), ("H", 5)],
+        "E": [("B", 1), ("D", 3), ("H", 5)],
         "F": [("C", 6), ("G", 4)],
-        "G": [("D", 8), ("F", 4), ("H", 2), ("T", 7)],
+        "G": [("D", 8), ("F", 4), ("H", 2), ("T", 1)],
         "H": [("E", 5), ("G", 2), ("T", 6)],
-        "T": [("G", 7), ("H", 6)],
+        "T": [("G", 1), ("H", 6)],
     }
-    coords = {
-        "A": (0, 6), "B": (4, 10), "C": (5, 3),
-        "D": (8, 6), "E": (8, 10), "F": (9, 3),
-        "G": (12, 4), "H": (12, 10), "T": (15, 8),
-    }
+    # условные координаты вершин: по ним считается манхэттенская эвристика
+    coords = {"A": (0, 2), "B": (2, 0), "C": (2, 4), "D": (3, 1),
+              "E": (3, 0), "F": (4, 4), "G": (5, 2), "H": (5, 0), "T": (6, 2)}
     tx, ty = coords["T"]
     h = {v: abs(x - tx) + abs(y - ty) for v, (x, y) in coords.items()}
+    true = dijkstra_all(graph, "T")
 
-    true_dist = dijkstra_all(graph, "T")
-    admissible = all(h[v] <= true_dist[v] for v in graph)
-    print("Манхэттенская эвристика h:", h)
-    print("Истинные расстояния до T:", {v: true_dist[v] for v in sorted(graph)})
-    print("Эвристика допустима (h(v) <= d(v, T)):", admissible)
+    print("h по Манхэттену: " + ", ".join(f"{v}={h[v]}" for v in "ABCDEFGHT"))
+    print("истинные d(v,T): " + ", ".join(f"{v}={true[v]}" for v in "ABCDEFGHT"))
+    over = [v for v in graph if h[v] > true[v]]
+    print("допустимость h(v) <= d(v,T): " + ("нарушена у " + ", ".join(over) if over else "выполняется"))
 
-    path_a, cost_a, exp_a = astar_graph(graph, "A", "T", h)
-    h_zero = {v: 0 for v in graph}
-    path_d, cost_d, exp_d = astar_graph(graph, "A", "T", h_zero)
-
-    print(f"A*:       путь = {' -> '.join(path_a)}, стоимость = {cost_a}, исследовано = {len(exp_a)} {exp_a}")
-    print(f"Дейкстра: путь = {' -> '.join(path_d)}, стоимость = {cost_d}, исследовано = {len(exp_d)} {exp_d}")
+    path, cost, order = astar(graph, "A", "T", h)
+    path_d, cost_d, order_d = astar(graph, "A", "T", {v: 0 for v in graph})
+    print(f"A*:       {' -> '.join(path)}, стоимость {cost}, исследовано вершин {len(order)}")
+    print(f"Дейкстра: {' -> '.join(path_d)}, стоимость {cost_d}, исследовано вершин {len(order_d)}")
 
 
-# --- Задание 2: Лабиринт 8x8 ---
-def task2_maze_8x8():
-    print("=" * 60)
+def task_2():
     print("Задание 2. A* в лабиринте 8x8")
-    grid = [
+    maze = [
         "S..#....",
         ".#.#.##.",
         ".#....#.",
@@ -102,58 +132,19 @@ def task2_maze_8x8():
         "........",
         ".#####.G",
     ]
-    n, m = len(grid), len(grid[0])
-    start, goal = (0, 0), (7, 7)
+    path, cost, explored = astar_grid(maze, (0, 0), (7, 7), "manhattan")
+    path_e, cost_e, explored_e = astar_grid(maze, (0, 0), (7, 7), "euclid")
+    _, cost_d, explored_d = astar_grid(maze, (0, 0), (7, 7), "zero")
 
-    def search_grid(mode):
-        def h(pos):
-            dr = abs(pos[0] - goal[0])
-            dc = abs(pos[1] - goal[1])
-            if mode == "manhattan":
-                return dr + dc
-            if mode == "euclidean":
-                return math.hypot(dr, dc)
-            return 0  # Дейкстра
-
-        open_set = [(h(start), start)]
-        g_score = {start: 0}
-        came_from = {}
-        visited = set()
-
-        while open_set:
-            _, cur = heapq.heappop(open_set)
-            if cur in visited:
-                continue
-            visited.add(cur)
-            if cur == goal:
-                path = [cur]
-                while cur in came_from:
-                    cur = came_from[cur]
-                    path.append(cur)
-                return path[::-1], g_score[goal], len(visited)
-
-            r, c = cur
-            for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-                nr, nc = r + dr, c + dc
-                if 0 <= nr < n and 0 <= nc < m and grid[nr][nc] != "#":
-                    nb = (nr, nc)
-                    tg = g_score[cur] + 1
-                    if nb not in g_score or tg < g_score[nb]:
-                        came_from[nb] = cur
-                        g_score[nb] = tg
-                        heapq.heappush(open_set, (tg + h(nb), nb))
-        return None, float("inf"), len(visited)
-
-    for mode, label in [("manhattan", "A* (Манхэттен)"), ("euclidean", "A* (Евклид)"), ("dijkstra", "Дейкстра (h=0)")]:
-        path, length, explored = search_grid(mode)
-        print(f"{label}: длина = {length}, исследовано клеток = {explored}")
-        print(f"  Путь: {path}")
+    print(f"A* (Манхэттен): длина пути {cost}, исследовано клеток {explored}")
+    print_maze(maze, path)
+    same = "путь совпал" if path_e == path else "путь другой"
+    print(f"A* (Евклид): длина пути {cost_e}, исследовано клеток {explored_e}, {same}")
+    print(f"Дейкстра: длина пути {cost_d}, исследовано клеток {explored_d}")
 
 
-# --- Задание 3: A* с заданной эвристикой ---
-def task3_given_heuristic():
-    print("=" * 60)
-    print("Задание 3. Проверка эвристики и сравнение A* с Дейкстрой")
+def task_3():
+    print("Задание 3. A* с эвристикой из условия, путь A -> T")
     graph = {
         "A": [("B", 2), ("C", 4)],
         "B": [("A", 2), ("D", 5)],
@@ -166,27 +157,27 @@ def task3_given_heuristic():
         "T": [("H", 5)],
     }
     h = {"A": 8, "B": 7, "C": 6, "D": 5, "E": 4, "F": 3, "G": 3, "H": 2, "T": 0}
+    true = dijkstra_all(graph, "T")
 
-    true_dist = dijkstra_all(graph, "T")
-    print("Проверка допустимости (h(v) <= d(v, T)):")
-    bad = []
-    for v in sorted(graph):
-        ok = h[v] <= true_dist[v]
-        if not ok:
-            bad.append(v)
-        print(f"  {v}: h={h[v]}, d={true_dist[v]} -> {'допустима' if ok else 'ПЕРЕОЦЕНКА'}")
-    print("Недопустимые вершины:", bad if bad else "нет (все допустимы)")
+    print("d(v,T): " + ", ".join(f"{v}={true[v]}" for v in "ABCDEFGHT"))
+    print("h(v) <= d(v,T): " + ", ".join(f"{v} {h[v]}<={true[v]}" for v in "ABCDEFGH"))
+    over = [v for v in graph if h[v] > true[v]]
+    print("переоценки: " + (", ".join(over) if over else "нет, эвристика допустима"))
 
-    path_a, cost_a, exp_a = astar_graph(graph, "A", "T", h)
-    path_0, cost_0, exp_0 = astar_graph(graph, "A", "T", {v: 0 for v in graph})
+    path, cost, order = astar(graph, "A", "T", h)
+    path_0, cost_0, order_0 = astar(graph, "A", "T", {v: 0 for v in graph})
+    print(f"A*:     {' -> '.join(path)}, стоимость {cost}, исследовано вершин {len(order)}")
+    print("        порядок: " + ", ".join(order))
+    print(f"h = 0:  {' -> '.join(path_0)}, стоимость {cost_0}, исследовано вершин {len(order_0)}")
+    print("        порядок: " + ", ".join(order_0))
 
-    print(f"A* (заданная h): путь = {' -> '.join(path_a)}, стоимость = {cost_a}")
-    print(f"  Исследовано ({len(exp_a)}): {exp_a}")
-    print(f"A* (h = 0 / Дейкстра): путь = {' -> '.join(path_0)}, стоимость = {cost_0}")
-    print(f"  Исследовано ({len(exp_0)}): {exp_0}")
 
+TASKS = [task_1, task_2, task_3]
 
 if __name__ == "__main__":
-    task1_weighted_astar()
-    task2_maze_8x8()
-    task3_given_heuristic()
+    if len(sys.argv) > 1:
+        TASKS[int(sys.argv[1]) - 1]()
+    else:
+        for task in TASKS:
+            task()
+            print()

@@ -1,53 +1,69 @@
-from collections import deque
+import sys
+from collections import Counter, deque
+from math import factorial
 
 
-def fleury(graph, start=None):
-    """Алгоритм Флёри для эйлерова цикла или пути (поддерживает мультиграфы)."""
+def is_bridge(g, u, v):
+    g[u].remove(v)
+    g[v].remove(u)
+    seen = {u}
+    queue = deque([u])
+    while queue:
+        x = queue.popleft()
+        for y in g[x]:
+            if y not in seen:
+                seen.add(y)
+                queue.append(y)
+    g[u].append(v)
+    g[v].append(u)
+    return v not in seen
+
+
+# Флёри: из текущей вершины идём по не-мосту, мост пускаем в ход только если выбора уже нет
+def fleury(graph, start):
     g = {v: list(nb) for v, nb in graph.items()}
-    odd = [v for v in g if len(g[v]) % 2 != 0]
-    if len(odd) not in (0, 2):
-        return None
-
-    def is_bridge(u, v):
-        g[u].remove(v)
-        g[v].remove(u)
-        visited = {u}
-        q = deque([u])
-        while q:
-            x = q.popleft()
-            for y in g[x]:
-                if y not in visited:
-                    visited.add(y)
-                    q.append(y)
-        g[u].append(v)
-        g[v].append(u)
-        return v not in visited
-
-    if start is None:
-        start = odd[0] if odd else next(iter(g))
-    circuit = [start]
-    cur = start
-
+    route = [start]
     while any(g.values()):
-        nbs = g[cur]
-        nxt = None
-        for nb in nbs:
-            if not is_bridge(cur, nb):
-                nxt = nb
-                break
-        if nxt is None:
-            nxt = nbs[0]
+        cur = route[-1]
+        nxt = next((nb for nb in g[cur] if not is_bridge(g, cur, nb)), g[cur][0])
         g[cur].remove(nxt)
         g[nxt].remove(cur)
-        cur = nxt
-        circuit.append(cur)
-    return circuit
+        route.append(nxt)
+    return route
 
 
-# --- Задание 1: Проверка эйлеровости ---
-def task1_euler_check():
-    print("=" * 60)
-    print("Задание 1. Проверка эйлеровости графа (7 вершин)")
+def show_degrees(graph):
+    deg = {v: len(nb) for v, nb in graph.items()}
+    print("степени: " + ", ".join(f"{v}={deg[v]}" for v in graph))
+    return deg
+
+
+# Флойд-Уоршелл: расстояния между всеми парами вершин и первые шаги кратчайших путей
+def shortest_paths(nodes, edges):
+    dist = {u: {v: (0 if u == v else float("inf")) for v in nodes} for u in nodes}
+    step = {}
+    for u, v, w in edges:
+        dist[u][v] = dist[v][u] = w
+        step[u, v], step[v, u] = v, u
+    for k in nodes:
+        for i in nodes:
+            for j in nodes:
+                if dist[i][k] + dist[k][j] < dist[i][j]:
+                    dist[i][j] = dist[i][k] + dist[k][j]
+                    step[i, j] = step[i, k]
+    return dist, step
+
+
+def path_between(step, u, v):
+    path = [u]
+    while u != v:
+        u = step[u, v]
+        path.append(u)
+    return path
+
+
+def task_1():
+    print("Задание 1. Эйлеровость графа из 7 вершин")
     graph = {
         "A": ["B", "C", "D"],
         "B": ["A", "C", "E"],
@@ -57,19 +73,22 @@ def task1_euler_check():
         "F": ["C", "D", "E", "G"],
         "G": ["E", "F"],
     }
-    degs = {v: len(nb) for v, nb in graph.items()}
-    odd = [v for v, d in degs.items() if d % 2 != 0]
-    print("Степени вершин:", degs)
-    print(f"Нечётные вершины ({len(odd)}): {odd}")
-    res = fleury(graph)
-    if res is None:
-        print("Вывод: граф НЕ эйлеров и НЕ полуэйлеров (нечётных вершин 4, а нужно 0 или 2).")
+    deg = show_degrees(graph)
+    odd = [v for v in graph if deg[v] % 2 != 0]
+    print(f"рёбер {sum(deg.values()) // 2}, сумма степеней {sum(deg.values())}")
+    print(f"нечётные вершины ({len(odd)}): " + ", ".join(odd))
+    if len(odd) == 0:
+        print("вывод: все степени чётные, граф эйлеров")
+        print("эйлеров цикл: " + " -> ".join(fleury(graph, next(iter(graph)))))
+    elif len(odd) == 2:
+        print(f"вывод: граф полуэйлеров, нечётные только {odd[0]} и {odd[1]}")
+        print("эйлеров путь: " + " -> ".join(fleury(graph, odd[0])))
+    else:
+        print(f"вывод: ни цикла, ни пути нет: нечётных {len(odd)}, а нужно 0 или 2")
 
 
-# --- Задание 2: Задача китайского почтальона (CPP) ---
-def task2_cpp():
-    print("=" * 60)
-    print("Задание 2. Задача китайского почтальона (7 вершин)")
+def task_2():
+    print("Задание 2. Задача китайского почтальона")
     edges = [
         ("A", "B", 6), ("A", "C", 3), ("A", "D", 8),
         ("B", "D", 5), ("B", "E", 4),
@@ -79,94 +98,59 @@ def task2_cpp():
         ("F", "G", 2),
     ]
     nodes = ["A", "B", "C", "D", "E", "F", "G"]
-    adj = {v: [] for v in nodes}
+    graph = {v: [] for v in nodes}
+    weight = {}
     for u, v, w in edges:
-        adj[u].append((v, w))
-        adj[v].append((u, w))
+        graph[u].append(v)
+        graph[v].append(u)
+        weight[u, v] = weight[v, u] = w
 
-    odd = [v for v in nodes if len(adj[v]) % 2 != 0]
-    print("Нечётные вершины:", odd)
+    deg = show_degrees(graph)
+    odd = [v for v in nodes if deg[v] % 2 != 0]
+    print("нечётные вершины: " + ", ".join(odd))
+    dist, step = shortest_paths(nodes, edges)
+    pieces = []
+    for i, u in enumerate(odd):
+        for v in odd[i + 1:]:
+            path = path_between(step, u, v)
+            tail = f" ({'-'.join(path)})" if len(path) > 2 else ""
+            pieces.append(f"{u}-{v} {dist[u][v]}{tail}")
+    print("кратчайшие пути: " + ", ".join(pieces))
 
-    # Флойд-Уоршелл для кратчайших расстояний и восстановления путей
-    INF = float("inf")
-    idx = {v: i for i, v in enumerate(nodes)}
-    n = len(nodes)
-    dist = [[INF] * n for _ in range(n)]
-    nxt = [[None] * n for _ in range(n)]
-    for i in range(n):
-        dist[i][i] = 0
-    for u, v, w in edges:
-        iu, iv = idx[u], idx[v]
-        dist[iu][iv] = dist[iv][iu] = w
-        nxt[iu][iv] = iv
-        nxt[iv][iu] = iu
-
-    for k in range(n):
-        for i in range(n):
-            for j in range(n):
-                if dist[i][k] + dist[k][j] < dist[i][j]:
-                    dist[i][j] = dist[i][k] + dist[k][j]
-                    nxt[i][j] = nxt[i][k]
-
-    def get_path(u, v):
-        iu, iv = idx[u], idx[v]
-        path = [u]
-        while iu != iv:
-            iu = nxt[iu][iv]
-            path.append(nodes[iu])
-        return path
-
-    print("Кратчайшие расстояния между нечётными вершинами:")
-    for i in range(len(odd)):
-        for j in range(i + 1, len(odd)):
-            u, v = odd[i], odd[j]
-            print(f"  {u} — {v}: {dist[idx[u]][idx[v]]} (путь {' -> '.join(get_path(u, v))})")
-
-    # Три варианта паросочетания для 4 нечётных вершин
+    # нечётных вершин четыре, поэтому вариантов паросочетания всего три
     a, b, c, d = odd
-    matchings = [
-        [(a, b), (c, d)],
-        [(a, c), (b, d)],
-        [(a, d), (b, c)],
-    ]
-    best_m = None
-    best_add = INF
-    for m in matchings:
-        cost = sum(dist[idx[u]][idx[v]] for u, v in m)
-        print(f"  Паросочетание {m}: доп. длина = {cost}")
-        if cost < best_add:
-            best_add = cost
-            best_m = m
+    variants = [[(a, b), (c, d)], [(a, c), (b, d)], [(a, d), (b, c)]]
+    costs = [sum(dist[u][v] for u, v in pairs) for pairs in variants]
+    print("паросочетания: " + ", ".join(
+        "+".join(f"{u}{v}" for u, v in pairs) + f"={cost}"
+        for pairs, cost in zip(variants, costs)))
+    best = variants[costs.index(min(costs))]
 
-    print(f"Выбрано минимальное паросочетание: {best_m} (доп. длина = {best_add})")
+    extra = []
+    for u, v in best:
+        path = path_between(step, u, v)
+        extra += list(zip(path, path[1:]))
+    print("дублируем: " + ", ".join(f"{u}-{v} ({weight[u, v]})" for u, v in extra))
 
-    # Строим эйлеров мультиграф, дублируя рёбра кратчайших путей
-    multi = {v: [] for v in nodes}
-    weight_map = {}
-    base_sum = 0
-    for u, v, w in edges:
+    multi = {v: list(nb) for v, nb in graph.items()}
+    for u, v in extra:
         multi[u].append(v)
         multi[v].append(u)
-        weight_map[(u, v)] = weight_map[(v, u)] = w
-        base_sum += w
+    route = fleury(multi, "A")
+    base = sum(w for _, _, w in edges)
+    total = sum(weight[route[i], route[i + 1]] for i in range(len(route) - 1))
+    print(f"сумма рёбер {base}, дубли {total - base}, итоговая длина {total}")
+    print("маршрут Флёри: " + " -> ".join(route))
 
-    for u, v in best_m:
-        p = get_path(u, v)
-        for i in range(len(p) - 1):
-            x, y = p[i], p[i + 1]
-            multi[x].append(y)
-            multi[y].append(x)
-
-    circuit = fleury(multi, start="A")
-    route_len = sum(weight_map[(circuit[i], circuit[i + 1])] for i in range(len(circuit) - 1))
-    print("Эйлеров маршрут почтальона:", " -> ".join(circuit))
-    print(f"Сумма исходных рёбер: {base_sum}, дублированные пути: {best_add}, итоговая длина: {route_len}")
+    steps = Counter(tuple(sorted(edge)) for edge in zip(route, route[1:]))
+    need = Counter(tuple(sorted((u, v))) for u, v, _ in edges)
+    need += Counter(tuple(sorted(edge)) for edge in extra)
+    print(f"проверка: рёбер {sum(need.values())}, шагов {sum(steps.values())}, "
+          f"каждое по разу: {'да' if steps == need else 'нет'}")
 
 
-# --- Задание 3: Гамильтонов цикл ---
-def task3_hamiltonian():
-    print("=" * 60)
-    print("Задание 3. Поиск гамильтонова цикла (6 вершин)")
+def task_3():
+    print("Задание 3. Гамильтонов цикл в графе из 6 вершин")
     graph = {
         "A": ["B", "C", "F"],
         "B": ["A", "C", "D"],
@@ -175,32 +159,40 @@ def task3_hamiltonian():
         "E": ["C", "D", "F"],
         "F": ["A", "D", "E"],
     }
+    deg = show_degrees(graph)
     n = len(graph)
-    degs = {v: len(nb) for v, nb in graph.items()}
-    dirac_ok = all(d >= n / 2 for d in degs.values())
-    print("Степени вершин:", degs)
-    print(f"Теорема Дирака (deg(v) >= {n/2:.0f} для всех v): {dirac_ok}")
+    dirac = min(deg.values()) * 2 >= n
+    print(f"условие Дирака deg(v) >= {n // 2}: {'выполнено' if dirac else 'не выполнено'}")
 
-    def find_hamiltonian(start):
-        def backtrack(path):
-            if len(path) == n:
-                if path[0] in graph[path[-1]]:
-                    return path + [path[0]]
-                return None
-            for nb in graph[path[-1]]:
-                if nb not in path:
-                    res = backtrack(path + [nb])
-                    if res:
-                        return res
-            return None
+    calls = 0
 
-        return backtrack([start])
+    # перебор с возвратом: наращиваем путь, пока не обойдём все вершины и не вернёмся в старт
+    def search(path):
+        nonlocal calls
+        calls += 1
+        if len(path) == n:
+            return path + [path[0]] if path[0] in graph[path[-1]] else None
+        for nb in graph[path[-1]]:
+            if nb not in path:
+                found = search(path + [nb])
+                if found:
+                    return found
+        return None
 
-    cycle = find_hamiltonian("A")
-    print("Найденный гамильтонов цикл:", " -> ".join(cycle))
+    cycle = search(["A"])
+    if cycle is None:
+        print("гамильтонов цикл не найден")
+    else:
+        print("гамильтонов цикл: " + " -> ".join(cycle))
+    print(f"вызовов перебора {calls}, перестановок всего (n-1)! = {factorial(n - 1)}")
 
+
+TASKS = [task_1, task_2, task_3]
 
 if __name__ == "__main__":
-    task1_euler_check()
-    task2_cpp()
-    task3_hamiltonian()
+    if len(sys.argv) > 1:
+        TASKS[int(sys.argv[1]) - 1]()
+    else:
+        for task in TASKS:
+            task()
+            print()

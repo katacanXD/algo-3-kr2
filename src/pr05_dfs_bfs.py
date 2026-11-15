@@ -1,9 +1,94 @@
+import sys
 from collections import deque
 
 
-# --- Задание 1: Обход графа DFS и BFS ---
-def task1_dfs_bfs():
-    print("=" * 60)
+# обход в глубину рекурсией: вершина попадает в order при первом посещении
+def dfs(graph, v, visited=None, order=None):
+    if visited is None:
+        visited = set()
+    if order is None:
+        order = []
+    visited.add(v)
+    order.append(v)
+    for nb in graph[v]:
+        if nb not in visited:
+            dfs(graph, nb, visited, order)
+    return order
+
+
+# обход в ширину: очередь, вершина добавляется по мере обнаружения
+def bfs(graph, start):
+    visited = {start}
+    queue = deque([start])
+    order = []
+    while queue:
+        v = queue.popleft()
+        order.append(v)
+        for nb in graph[v]:
+            if nb not in visited:
+                visited.add(nb)
+                queue.append(nb)
+    return order
+
+
+def components(graph):
+    visited = set()
+    result = []
+    for v in graph:
+        if v not in visited:
+            result.append(sorted(dfs(graph, v, visited)))
+    return result
+
+
+# раскраска в два цвета через BFS: конфликт выдаёт нечётный цикл
+def color_component(graph, start):
+    color = {start: 0}
+    dist = {start: 0}
+    queue = deque([start])
+    while queue:
+        v = queue.popleft()
+        for nb in graph[v]:
+            if nb not in color:
+                color[nb] = 1 - color[v]
+                dist[nb] = dist[v] + 1
+                queue.append(nb)
+            elif color[nb] == color[v]:
+                return None, (v, nb, dist[v] + dist[nb] + 1)
+    return color, None
+
+
+def topo_sort(graph):
+    visited, result = set(), []
+
+    def visit(v):
+        visited.add(v)
+        for nb in graph[v]:
+            if nb not in visited:
+                visit(nb)
+        result.append(v)
+
+    for v in graph:
+        if v not in visited:
+            visit(v)
+    return result[::-1]
+
+
+def shortest_path(graph, start, goal):
+    prev = {start: None}
+    queue = deque([start])
+    while queue:
+        v = queue.popleft()
+        for nb in graph[v]:
+            if nb not in prev:
+                prev[nb] = v
+                queue.append(nb)
+    path = [goal]
+    while path[-1] != start:
+        path.append(prev[path[-1]])
+    return path[::-1]
+
+
+def task_1():
     print("Задание 1. Обход графа DFS и BFS от вершины 1")
     graph = {
         1: [2, 3],
@@ -17,41 +102,16 @@ def task1_dfs_bfs():
         9: [6, 7, 10],
         10: [8, 9],
     }
-
-    def dfs(v, visited=None, order=None):
-        if visited is None:
-            visited = set()
-            order = []
-        visited.add(v)
-        order.append(v)
-        for nb in graph[v]:
-            if nb not in visited:
-                dfs(nb, visited, order)
-        return order
-
-    def bfs(start):
-        visited = {start}
-        queue = deque([start])
-        order = []
-        while queue:
-            v = queue.popleft()
-            order.append(v)
-            for nb in graph[v]:
-                if nb not in visited:
-                    visited.add(nb)
-                    queue.append(nb)
-        return order
-
-    dfs_order = dfs(1)
-    bfs_order = bfs(1)
-    print(f"DFS (всего {len(dfs_order)}): {dfs_order}")
-    print(f"BFS (всего {len(bfs_order)}): {bfs_order}")
+    edges = [f"{u}-{v}" for u in graph for v in graph[u] if u < v]
+    print("рёбра:", ", ".join(edges))
+    by_dfs = dfs(graph, 1)
+    by_bfs = bfs(graph, 1)
+    print(f"DFS (вершин {len(by_dfs)}): {' '.join(map(str, by_dfs))}")
+    print(f"BFS (вершин {len(by_bfs)}): {' '.join(map(str, by_bfs))}")
 
 
-# --- Задание 2: Компоненты связности и двудольность ---
-def task2_components_bipartite():
-    print("=" * 60)
-    print("Задание 2. Компоненты связности и проверка двудольности")
+def task_2():
+    print("Задание 2. Компоненты связности и двудольность")
     graph = {
         "A": ["B", "C"],
         "B": ["A", "C"],
@@ -66,54 +126,26 @@ def task2_components_bipartite():
         "K": ["J", "L"],
         "L": ["I", "K"],
     }
-
-    # Поиск компонент связности с помощью DFS
-    visited = set()
-    components = []
-    for v in graph:
-        if v not in visited:
-            comp = []
-            stack = [v]
-            while stack:
-                cur = stack.pop()
-                if cur not in visited:
-                    visited.add(cur)
-                    comp.append(cur)
-                    for nb in graph[cur]:
-                        if nb not in visited:
-                            stack.append(nb)
-            components.append(sorted(comp))
-
-    print("Компоненты связности:", components)
-
-    # Проверка двудольности каждой компоненты через BFS
-    for comp in components:
-        start = comp[0]
-        color = {start: 0}
-        queue = deque([start])
-        is_bip = True
-        while queue and is_bip:
-            v = queue.popleft()
-            for nb in graph[v]:
-                if nb not in color:
-                    color[nb] = 1 - color[v]
-                    queue.append(nb)
-                elif color[nb] == color[v]:
-                    is_bip = False
-                    break
-        if is_bip:
-            part0 = [k for k in comp if color[k] == 0]
-            part1 = [k for k in comp if color[k] == 1]
-            print(f"  Компонента {comp}: двудольная (доля 0: {part0}, доля 1: {part1})")
+    edges = [f"{u}-{v}" for u in graph for v in graph[u] if u < v]
+    print("рёбра:", ", ".join(edges))
+    for comp in components(graph):
+        name = ", ".join(comp)
+        if len(comp) == 1:
+            print(f"{name}: двудольная, вершина без рёбер")
+            continue
+        color, conflict = color_component(graph, comp[0])
+        if conflict:
+            v, nb, size = conflict
+            print(f"{name}: не двудольная, ребро {v}-{nb} замыкает цикл длины {size}")
         else:
-            print(f"  Компонента {comp}: НЕ двудольная (содержит нечётный цикл — треугольник A-B-C)")
+            part0 = ", ".join(u for u in comp if color[u] == 0)
+            part1 = ", ".join(u for u in comp if color[u] == 1)
+            print(f"{name}: двудольная, доли [{part0}] и [{part1}]")
 
 
-# --- Задание 3: Топологическая сортировка и кратчайший путь ---
-def task3_toposort_and_path():
-    print("=" * 60)
-    print("Задание 3. Топологическая сортировка и кратчайший путь (A -> H)")
-    dag = {
+def task_3():
+    print("Задание 3. Топологическая сортировка и кратчайший путь A -> H")
+    graph = {
         "A": ["B", "C"],
         "B": ["D", "E"],
         "C": ["E", "F"],
@@ -123,47 +155,19 @@ def task3_toposort_and_path():
         "G": ["H"],
         "H": [],
     }
+    print("рёбра:", ", ".join(f"{u}->{v}" for u in graph for v in graph[u]))
+    order = topo_sort(graph)
+    print("топологический порядок:", " ".join(order))
+    path = shortest_path(graph, "A", "H")
+    print(f"кратчайший путь A -> H: {' -> '.join(path)} (длина {len(path) - 1})")
 
-    # Топологическая сортировка через DFS
-    visited = set()
-    topo = []
 
-    def dfs(v):
-        visited.add(v)
-        for nb in dag[v]:
-            if nb not in visited:
-                dfs(nb)
-        topo.append(v)
-
-    for v in dag:
-        if v not in visited:
-            dfs(v)
-    topo.reverse()
-    print("Топологический порядок:", topo)
-
-    # Кратчайший путь от A до H с помощью BFS
-    start, goal = "A", "H"
-    prev = {start: None}
-    queue = deque([start])
-    while queue:
-        v = queue.popleft()
-        if v == goal:
-            break
-        for nb in dag[v]:
-            if nb not in prev:
-                prev[nb] = v
-                queue.append(nb)
-
-    path = []
-    cur = goal
-    while cur is not None:
-        path.append(cur)
-        cur = prev[cur]
-    path.reverse()
-    print(f"Кратчайший путь {start} -> {goal}: {' -> '.join(path)} (длина = {len(path) - 1} рёбер)")
-
+TASKS = [task_1, task_2, task_3]
 
 if __name__ == "__main__":
-    task1_dfs_bfs()
-    task2_components_bipartite()
-    task3_toposort_and_path()
+    if len(sys.argv) > 1:
+        TASKS[int(sys.argv[1]) - 1]()
+    else:
+        for task in TASKS:
+            task()
+            print()

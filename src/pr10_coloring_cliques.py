@@ -1,66 +1,78 @@
+import sys
+
+
 def greedy_coloring(graph, order):
-    """Простая жадная раскраска графа в заданном порядке вершин."""
     colors = {}
     for v in order:
         used = {colors[nb] for nb in graph[v] if nb in colors}
-        c = 1
-        while c in used:
-            c += 1
-        colors[v] = c
+        color = 1
+        while color in used:
+            color += 1
+        colors[v] = color
     return colors
 
 
+# один цвет - это букет: вершина и все несмежные с ней, начинаем с самых занятых
 def welsh_powell(graph):
-    """Раскраска методом Вельша-Пауэлла (сортировка по убыванию степени, букеты)."""
-    order = sorted(graph.keys(), key=lambda v: (-len(graph[v]), v))
-    colors = {}
-    buckets = []
-    color_num = 0
+    order = sorted(graph, key=lambda v: (-len(graph[v]), v))
+    colors, buckets = {}, []
     for v in order:
         if v in colors:
             continue
-        color_num += 1
+        color = len(buckets) + 1
+        colors[v] = color
         bucket = [v]
-        colors[v] = color_num
         for u in order:
             if u not in colors and all(u not in graph[b] for b in bucket):
-                colors[u] = color_num
+                colors[u] = color
                 bucket.append(u)
-        buckets.append((color_num, bucket))
-    return colors, buckets, order
+        buckets.append(bucket)
+    return colors, buckets
+
+
+def dsatur(graph):
+    colors = {}
+    while len(colors) < len(graph):
+        v = max((u for u in graph if u not in colors),
+                key=lambda u: (len({colors[nb] for nb in graph[u] if nb in colors}),
+                               len(graph[u]), u))
+        used = {colors[nb] for nb in graph[v] if nb in colors}
+        color = 1
+        while color in used:
+            color += 1
+        colors[v] = color
+    return colors
 
 
 def exact_chromatic_number(graph):
-    """Точное определение хроматического числа перебором для небольшого графа."""
-    nodes = list(graph.keys())
+    nodes = sorted(graph, key=lambda v: -len(graph[v]))
 
-    def can_color(k):
-        col = {}
+    def paint(k):
+        colors = {}
 
-        def dfs(idx):
-            if idx == len(nodes):
+        def dfs(i):
+            if i == len(nodes):
                 return True
-            v = nodes[idx]
-            used = {col[nb] for nb in graph[v] if nb in col}
-            for c in range(1, k + 1):
-                if c not in used:
-                    col[v] = c
-                    if dfs(idx + 1):
+            v = nodes[i]
+            used = {colors[u] for u in graph[v] if u in colors}
+            for color in range(1, k + 1):
+                if color not in used:
+                    colors[v] = color
+                    if dfs(i + 1):
                         return True
-                    del col[v]
+                    del colors[v]
             return False
 
-        return dfs(0), col
+        return dfs(0), colors
 
     for k in range(1, len(nodes) + 1):
-        ok, col = can_color(k)
+        ok, colors = paint(k)
         if ok:
-            return k, col
+            return k, colors
     return len(nodes), {}
 
 
 def bron_kerbosch(R, P, X, graph, cliques):
-    """Алгоритм Брона-Кербоша для поиска всех максимальных клик."""
     if not P and not X:
         cliques.append(sorted(R))
         return
@@ -70,10 +82,39 @@ def bron_kerbosch(R, P, X, graph, cliques):
         X.add(v)
 
 
-# --- Задание 1: Раскраска графа ---
-def task1_coloring():
-    print("=" * 60)
-    print("Задание 1. Раскраска графа (8 вершин)")
+def max_cliques(graph):
+    cliques = []
+    bron_kerbosch(set(), set(graph), set(), graph, cliques)
+    return sorted(cliques, key=lambda c: (-len(c), c))
+
+
+def complement(graph):
+    nodes = sorted(graph)
+    return {v: [u for u in nodes if u != v and u not in graph[v]] for v in nodes}
+
+
+def layout(colors):
+    return " ".join(f"{v}={colors[v]}" for v in sorted(colors))
+
+
+def braces(names):
+    return "{" + ",".join(names) + "}"
+
+
+def wrap(items, width=86):
+    lines, line = [], ""
+    for item in items:
+        if len(line) + len(item) + 2 > width:
+            lines.append(line.rstrip(", "))
+            line = ""
+        line += item + ", "
+    if line:
+        lines.append(line.rstrip(", "))
+    return lines
+
+
+def task_1():
+    print("Задание 1. Раскраска графа из 8 вершин")
     graph = {
         "A": ["B", "C", "D", "E"],
         "B": ["A", "C", "F"],
@@ -84,25 +125,26 @@ def task1_coloring():
         "G": ["C", "D", "F", "H"],
         "H": ["E", "F", "G"],
     }
-    alpha_order = ["A", "B", "C", "D", "E", "F", "G", "H"]
-    c_greedy = greedy_coloring(graph, alpha_order)
-    print(f"Простой жадный ({alpha_order}):")
-    print(f"  Раскраска: {c_greedy}, цветов = {max(c_greedy.values())}")
+    order = sorted(graph)
+    greedy = greedy_coloring(graph, order)
+    print(f"жадный ({','.join(order)}): {layout(greedy)}, цветов {max(greedy.values())}")
 
-    c_wp, buckets, wp_order = welsh_powell(graph)
-    print(f"Вельш-Пауэлл (порядок {wp_order}):")
-    for col, b in buckets:
-        print(f"  Цвет {col}: {b}")
-    print(f"  Использовано цветов = {len(buckets)}")
+    wp_colors, buckets = welsh_powell(graph)
+    wp_order = sorted(graph, key=lambda v: (-len(graph[v]), v))
+    print(f"Вельш-Пауэлл ({','.join(wp_order)}): {layout(wp_colors)}, цветов {len(buckets)}")
+    print("  букеты: " + ", ".join(braces(sorted(b)) for b in buckets))
 
-    chi, opt_col = exact_chromatic_number(graph)
-    print(f"Точное хроматическое число chi(G) = {chi} (пример раскраски: {opt_col})")
+    dsat = dsatur(graph)
+    print(f"DSatur: {layout(dsat)}, цветов {max(dsat.values())}")
+
+    chi, _ = exact_chromatic_number(graph)
+    clique = max_cliques(graph)[0]
+    note = "нижняя оценка по клике слабая" if chi > len(clique) else "нижняя оценка по клике точная"
+    print(f"chi(G) = {chi}, наибольшая клика {braces(clique)} размера {len(clique)}: {note}")
 
 
-# --- Задание 2: Клики и независимые множества ---
-def task2_cliques_and_indep():
-    print("=" * 60)
-    print("Задание 2. Клики и независимые множества (Брон-Кербош)")
+def task_2():
+    print("Задание 2. Клики и независимые множества графа из 8 вершин")
     graph = {
         "A": ["B", "C", "D"],
         "B": ["A", "C", "D"],
@@ -113,34 +155,30 @@ def task2_cliques_and_indep():
         "G": ["E", "F", "H"],
         "H": ["F", "G"],
     }
-    cliques = []
-    bron_kerbosch(set(), set(graph.keys()), set(), graph, cliques)
-    cliques.sort(key=lambda c: (-len(c), c))
-    print(f"Максимальные клики G ({len(cliques)}):")
+    cliques = max_cliques(graph)
+    print(f"максимальные клики ({len(cliques)}):")
     for c in cliques:
-        print(f"  {c} (размер {len(c)})")
-    max_clique_size = len(cliques[0])
-    print(f"Наибольшая клика: {cliques[0]}, оценка снизу chi(G) >= {max_clique_size}")
+        print(f"  {braces(c)} размера {len(c)}")
+    print(f"наибольшая клика {braces(cliques[0])}, отсюда chi(G) >= {len(cliques[0])}")
 
-    # Дополнение графа G'
-    nodes = sorted(graph.keys())
-    comp = {v: [u for u in nodes if u != v and u not in graph[v]] for v in nodes}
-    print("Дополнение графа (списки смежности):")
-    for v in nodes:
-        print(f"  {v}: {comp[v]}")
+    comp = complement(graph)
+    edges = [braces([u, v]) for u in sorted(comp) for v in comp[u] if u < v]
+    print(f"дополнение графа, рёбер {len(edges)}:")
+    for line in wrap(edges):
+        print("  " + line)
 
-    indep_sets = []
-    bron_kerbosch(set(), set(comp.keys()), set(), comp, indep_sets)
-    indep_sets.sort(key=lambda c: (-len(c), c))
-    print(f"Максимальные независимые множества G ({len(indep_sets)}):")
-    for s in indep_sets:
-        print(f"  {s} (размер {len(s)})")
+    # независимые множества G - это клики дополнения
+    indep = max_cliques(comp)
+    print(f"независимых множеств {len(indep)}, у наибольших по {len(indep[0])} вершины:")
+    for line in wrap([f"{braces(s)} ({len(s)})" for s in indep]):
+        print("  " + line)
+
+    bad = sum(1 for s in indep for u in s for v in s if u < v and v in graph[u])
+    print(f"проверка: смежных пар внутри этих множеств {bad}")
 
 
-# --- Задание 3: Составление расписания ---
-def task3_schedule():
-    print("=" * 60)
-    print("Задание 3. Составление расписания для 6 занятий")
+def task_3():
+    print("Задание 3. Расписание для шести занятий")
     conflicts = {
         "M1": ["M2", "M3", "P1"],
         "M2": ["M1", "M3", "P2"],
@@ -149,20 +187,29 @@ def task3_schedule():
         "P2": ["M2", "M3", "P1", "P3"],
         "P3": ["M3", "P1", "P2"],
     }
-    colors, buckets, order = welsh_powell(conflicts)
+    degrees = {v: len(nb) for v, nb in conflicts.items()}
+    order = sorted(conflicts, key=lambda v: (-degrees[v], v))
+    print("конфликтов у занятий: " + ", ".join(f"{v} {degrees[v]}" for v in order))
+
     chi, _ = exact_chromatic_number(conflicts)
-    print("Порядок по убыванию конфликтов:", [(v, len(conflicts[v])) for v in order])
-    print(f"Хроматическое число (минимум слотов) = {chi}")
-    for slot, group in buckets:
-        print(f"  Слот {slot}: {group}")
+    clique = max_cliques(conflicts)[0]
+    print(f"chi(G) = {chi}, клика {braces(clique)} требует не меньше {len(clique)} слотов")
 
-    # Проверка корректности расписания
-    valid = all(colors[u] != colors[v] for u in conflicts for v in conflicts[u])
-    all_assigned = set(colors.keys()) == set(conflicts.keys())
-    print(f"Проверка: конфликтов нет = {valid}, все занятия распределены = {all_assigned}")
+    colors, buckets = welsh_powell(conflicts)
+    print(f"Вельш-Пауэлл, слотов {len(buckets)}:")
+    for i, bucket in enumerate(buckets, 1):
+        print(f"  слот {i}: {', '.join(sorted(bucket))}")
 
+    bad = sum(1 for u in conflicts for v in conflicts[u] if u < v and colors[u] == colors[v])
+    print(f"распределено занятий {len(colors)} из {len(conflicts)}, нарушений {bad}")
+
+
+TASKS = [task_1, task_2, task_3]
 
 if __name__ == "__main__":
-    task1_coloring()
-    task2_cliques_and_indep()
-    task3_schedule()
+    if len(sys.argv) > 1:
+        TASKS[int(sys.argv[1]) - 1]()
+    else:
+        for task in TASKS:
+            task()
+            print()

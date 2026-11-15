@@ -1,101 +1,94 @@
 import math
+import sys
 
 
-# --- Задание 1: Беллман-Форд ---
-def task1_bellman_ford():
-    print("=" * 60)
-    print("Задание 1. Алгоритм Беллмана-Форда (от S до всех вершин)")
-    names = ["S", "A", "B", "C", "D", "T"]
-    edges = [
-        (0, 1, 4),   # S -> A
-        (0, 2, 3),   # S -> B
-        (1, 2, -2),  # A -> B
-        (1, 3, 7),   # A -> C
-        (2, 3, 5),   # B -> C
-        (2, 4, 8),   # B -> D
-        (3, 4, -1),  # C -> D
-        (3, 5, 6),   # C -> T
-        (4, 5, 3),   # D -> T
-    ]
-    n = len(names)
-    INF = float("inf")
-    dist = [INF] * n
-    prev = [None] * n
-    dist[0] = 0
-
-    for _ in range(n - 1):
-        updated = False
+# V-1 проход по всем рёбрам; если на очередном проходе ничего не улучшилось, дальше смысла нет
+def bellman_ford(names, edges, start):
+    dist = {name: math.inf for name in names}
+    prev = {name: None for name in names}
+    dist[start] = 0
+    for _ in range(len(names) - 1):
+        changed = False
         for u, v, w in edges:
-            if dist[u] != INF and dist[u] + w < dist[v]:
+            if dist[u] + w < dist[v]:
                 dist[v] = dist[u] + w
                 prev[v] = u
-                updated = True
-        if not updated:
+                changed = True
+        if not changed:
             break
+    return dist, prev
 
-    # Проверка на отрицательный цикл
-    has_neg_cycle = any(dist[u] != INF and dist[u] + w < dist[v] for u, v, w in edges)
-    print("Отрицательный цикл:", "Да" if has_neg_cycle else "Нет")
-    print("Кратчайшие расстояния от S:")
-    for i, name in enumerate(names):
-        print(f"  dist[{name}] = {dist[i]}")
 
-    # Восстановление пути до T (индекс 5)
+def restore_path(prev, target):
     path = []
-    cur = 5
-    while cur is not None:
-        path.append(names[cur])
-        cur = prev[cur]
-    path.reverse()
-    print(f"Кратчайший путь S -> T: {' -> '.join(path)} (длина = {dist[5]})")
+    v = target
+    while v is not None:
+        path.append(v)
+        v = prev[v]
+    return path[::-1]
 
 
-# --- Задание 2: Флойд-Уоршелл ---
-def task2_floyd_warshall():
-    print("=" * 60)
-    print("Задание 2. Алгоритм Флойда-Уоршелла (5 вершин)")
-    INF = float("inf")
-    # Индексы: 1=0, 2=1, 3=2, 4=3, 5=4
-    # Примечание: на рисунке подпись дуги 4->2 перекрывается с 2->4 (-2);
-    # т.к. по условию отрицательное ребро одно, принимаем w(2->4)=-2, w(4->2)=4.
-    n = 5
-    dist = [[INF] * n for _ in range(n)]
-    for i in range(n):
-        dist[i][i] = 0
-
-    edges = [
-        (0, 1, 5),   # 1 -> 2
-        (0, 2, 10),  # 1 -> 3
-        (1, 2, 3),   # 2 -> 3
-        (1, 3, -2),  # 2 -> 4
-        (3, 1, 4),   # 4 -> 2
-        (2, 3, 2),   # 3 -> 4
-        (2, 4, 7),   # 3 -> 5
-        (3, 4, 4),   # 4 -> 5
-        (4, 0, 12),  # 5 -> 1
-    ]
-    for u, v, w in edges:
-        dist[u][v] = w
-
+def floyd(n, matrix):
+    dist = [row[:] for row in matrix]
     for k in range(n):
         for i in range(n):
             for j in range(n):
                 if dist[i][k] + dist[k][j] < dist[i][j]:
                     dist[i][j] = dist[i][k] + dist[k][j]
+    return dist
 
-    neg_cycle = any(dist[i][i] < 0 for i in range(n))
-    print("Отрицательный цикл:", "Обнаружен" if neg_cycle else "Отсутствует")
-    print("Матрица кратчайших расстояний (1..5):")
-    print("     " + " ".join(f"{j+1:>4}" for j in range(n)))
+
+def show_matrix(dist, names):
+    print("      " + " ".join(f"{name:>4}" for name in names))
+    for i, name in enumerate(names):
+        row = " ".join(f"{'inf' if v == math.inf else v:>4}" for v in dist[i])
+        print(f"{name:>4}  {row}")
+
+
+def task_1():
+    print("Задание 1. Беллман-Форд: расстояния от S и путь до T")
+    names = ["S", "A", "B", "C", "D", "T"]
+    edges = [
+        ("S", "A", 4),
+        ("S", "B", 3),
+        ("A", "B", -2),
+        ("A", "C", 7),
+        ("B", "C", 5),
+        ("B", "D", 8),
+        ("C", "D", -1),
+        ("C", "T", 6),
+        ("D", "T", 3),
+    ]
+    dist, prev = bellman_ford(names, edges, "S")
+    print("расстояния: " + ", ".join(f"{name}={dist[name]:g}" for name in names))
+    print(f"путь S -> T: {' -> '.join(restore_path(prev, 'T'))}, длина {dist['T']:g}")
+    loop = [f"{u}->{v}" for u, v, w in edges if dist[u] + w < dist[v]]
+    print("отрицательный цикл: " + (", ".join(loop) if loop else "нет"))
+
+
+def task_2():
+    print("Задание 2. Флойд-Уоршелл: расстояния между всеми парами")
+    names = ["1", "2", "3", "4", "5"]
+    edges = [
+        (0, 1, 5), (0, 2, 10), (1, 2, 3), (1, 3, -2),
+        (2, 3, 2), (2, 4, 7), (3, 4, 4), (4, 0, 12),
+    ]
+    n = len(names)
+    matrix = [[math.inf] * n for _ in range(n)]
     for i in range(n):
-        row_str = " ".join(f"{'INF':>4}" if dist[i][j] == INF else f"{dist[i][j]:>4}" for j in range(n))
-        print(f"  {i+1}: {row_str}")
+        matrix[i][i] = 0
+    for u, v, w in edges:
+        matrix[u][v] = w
+
+    dist = floyd(n, matrix)
+    show_matrix(dist, names)
+    loop = [names[i] for i in range(n) if dist[i][i] < 0]
+    print("отрицательный цикл: " + (", ".join(loop) if loop else "нет"))
 
 
-# --- Задание 3: Арбитраж валют ---
-def task3_arbitrage():
-    print("=" * 60)
-    print("Задание 3. Финансовый арбитраж валют")
+def task_3():
+    print("Задание 3. Арбитраж валют")
+    names = ["USD", "EUR", "GBP", "JPY"]
     rates = [
         ("USD", "EUR", 0.85),
         ("EUR", "GBP", 1.15),
@@ -103,56 +96,52 @@ def task3_arbitrage():
         ("USD", "JPY", 145.0),
         ("JPY", "GBP", 0.0075),
     ]
-    currencies = ["USD", "EUR", "GBP", "JPY"]
-    idx = {c: i for i, c in enumerate(currencies)}
-    rate_map = {(u, v): r for u, v, r in rates}
-    edges = [(idx[u], idx[v], -math.log(r)) for u, v, r in rates]
+    rate = {(u, v): r for u, v, r in rates}
+    # прибыльный обмен по кругу становится отрицательным циклом весов -log(курс)
+    edges = [(u, v, -math.log(r)) for u, v, r in rates]
 
-    n = len(currencies)
-    dist = [0.0] * n  # старт со всех вершин одновременно, чтобы найти любой цикл
-    prev = [None] * n
-
-    x = -1
-    for step in range(n):
-        x = -1
+    dist = {name: 0.0 for name in names}
+    prev = {name: None for name in names}
+    bad = None
+    for _ in range(len(names)):
+        bad = None
         for u, v, w in edges:
-            if dist[u] + w < dist[v] - 1e-12:
+            if dist[u] + w < dist[v] - 1e-9:
                 dist[v] = dist[u] + w
                 prev[v] = u
-                x = v
-
-    if x == -1:
-        print("Арбитражных возможностей нет.")
+                bad = v
+    if bad is None:
+        print("арбитражного цикла нет")
         return
 
-    # Входим внутрь отрицательного цикла, сделав n шагов по prev
-    for _ in range(n):
-        x = prev[x]
-
-    cycle = []
-    cur = x
-    while True:
-        cycle.append(currencies[cur])
-        cur = prev[cur]
-        if cur == x and len(cycle) > 1:
-            break
-    cycle.append(currencies[x])
+    for _ in range(len(names)):
+        bad = prev[bad]
+    cycle = [bad]
+    v = prev[bad]
+    while v != bad:
+        cycle.append(v)
+        v = prev[v]
+    cycle.append(bad)
     cycle.reverse()
 
     product = 1.0
-    for i in range(len(cycle) - 1):
-        product *= rate_map[(cycle[i], cycle[i + 1])]
+    weight = 0.0
+    for u, v in zip(cycle, cycle[1:]):
+        product *= rate[(u, v)]
+        weight -= math.log(rate[(u, v)])
+    capital = 1000.0
+    print("цикл: " + " -> ".join(cycle))
+    print(f"вес цикла: {weight:+.4f}, цикл отрицательный")
+    print(f"произведение курсов: {product:.6f}")
+    print(f"капитал: {capital:.0f} -> {capital * product:.2f}, прибыль {capital * product - capital:+.2f}")
 
-    start_capital = 1000.0
-    final_capital = start_capital * product
-    profit = final_capital - start_capital
 
-    print(f"Найден арбитражный цикл: {' -> '.join(cycle)}")
-    print(f"Произведение курсов: {product:.6f}")
-    print(f"Итоговая сумма при старте {start_capital:.0f}: {final_capital:.2f} (прибыль = +{profit:.2f})")
-
+TASKS = [task_1, task_2, task_3]
 
 if __name__ == "__main__":
-    task1_bellman_ford()
-    task2_floyd_warshall()
-    task3_arbitrage()
+    if len(sys.argv) > 1:
+        TASKS[int(sys.argv[1]) - 1]()
+    else:
+        for task in TASKS:
+            task()
+            print()

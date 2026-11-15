@@ -1,180 +1,193 @@
+import sys
 from collections import deque
 
 
-def max_flow(vertices, edges, source, sink, use_bfs=False, title=""):
-    """
-    Простая реализация алгоритма Форда-Фалкерсона (DFS)
-    и Эдмондса-Карпа (BFS при use_bfs=True).
-    """
-    print("=" * 60)
-    if title:
-        print(title)
-    print(f"Исток: {source}, Сток: {sink}")
+# остаточная сеть: res[u][v] - сколько ещё можно пропустить по ребру u->v
+def make_residual(graph):
+    res = {u: {} for u in graph}
+    for u in graph:
+        for v, cap in graph[u]:
+            res[u][v] = res[u].get(v, 0) + cap
+            res[v].setdefault(u, 0)
+    return res
 
-    # Строим остаточную сеть: residual[u][v] = остаточная пропускная способность
-    residual = {v: {} for v in vertices}
-    for u, v, cap in edges:
-        residual[u][v] = residual[u].get(v, 0) + cap
-        residual[v].setdefault(u, 0)
 
-    def find_path():
-        parent = {source: None}
-        if use_bfs:
-            # Поиск в ширину (Эдмондс-Карп)
-            q = deque([source])
-            while q:
-                u = q.popleft()
-                if u == sink:
-                    break
-                for v, cap in residual[u].items():
-                    if v not in parent and cap > 0:
-                        parent[v] = u
-                        q.append(v)
-        else:
-            # Поиск в глубину (Форд-Фалкерсон)
-            stack = [source]
-            while stack:
-                u = stack.pop()
-                if u == sink:
-                    break
-                for v, cap in residual[u].items():
-                    if v not in parent and cap > 0:
-                        parent[v] = u
-                        stack.append(v)
+def find_path(res, source, sink, bfs):
+    parent = {source: None}
+    queue = deque([source]) if bfs else [source]
+    while queue:
+        u = queue.popleft() if bfs else queue.pop()
+        if u == sink:
+            break
+        for v, cap in res[u].items():
+            if cap > 0 and v not in parent:
+                parent[v] = u
+                queue.append(v)
+    if sink not in parent:
+        return None
+    path = []
+    v = sink
+    while v is not None:
+        path.append(v)
+        v = parent[v]
+    return path[::-1]
 
-        if sink not in parent:
-            return None, 0
 
-        # Восстанавливаем путь и находим минимальную пропускную способность
-        path = []
-        v = sink
-        bottleneck = float("inf")
-        while v != source:
-            u = parent[v]
-            path.append(v)
-            bottleneck = min(bottleneck, residual[u][v])
-            v = u
-        path.append(source)
-        path.reverse()
-        return path, bottleneck
-
-    total_flow = 0
+def max_flow(graph, source, sink, bfs=False):
+    res = make_residual(graph)
+    total = 0
     step = 0
-
     while True:
-        path, flow = find_path()
+        path = find_path(res, source, sink, bfs)
         if path is None:
             break
-        step += 1
-        total_flow += flow
-
-        # Обновляем остаточную сеть
+        flow = min(res[path[i]][path[i + 1]] for i in range(len(path) - 1))
         for i in range(len(path) - 1):
             u, v = path[i], path[i + 1]
-            residual[u][v] -= flow
-            residual[v][u] += flow
+            res[u][v] -= flow
+            res[v][u] += flow
+        total += flow
+        step += 1
+        print(f"шаг {step}: {' -> '.join(path)}, поток {flow}, суммарно {total}")
+        if bfs:
+            left = [f"{u}->{v}:{cap}" for u in res for v, cap in res[u].items() if cap > 0]
+            print("   остаточная сеть: " + ", ".join(left))
 
-        print(f"Шаг {step}: путь {' -> '.join(map(str, path))}, поток = {flow}, суммарно = {total_flow}")
-        if use_bfs:
-            active = []
-            for u in vertices:
-                for v, c in residual[u].items():
-                    if c > 0:
-                        active.append(f"{u}->{v}:{c}")
-            print("  Остаточная сеть:", ", ".join(active))
+    print(f"максимальный поток: {total} (итераций {step})")
 
-    print(f"Итоговый максимальный поток: {total_flow} (итераций: {step})")
-    print("Потоки по рёбрам:")
-    for u, v, cap in edges:
-        used = cap - residual[u][v]
-        # Учитываем случай, если есть несколько дуг или обратный поток
-        used = max(0, min(cap, used))
-        print(f"  {u} -> {v}: {used}/{cap}")
+    print("поток по рёбрам:")
+    for u in graph:
+        for v, cap in graph[u]:
+            print(f"   {u} -> {v}: {cap - res[u][v]} / {cap}")
 
-    # Минимальный разрез: вершины, достижимые из истока в остаточной сети
     reachable = {source}
-    q = deque([source])
-    while q:
-        u = q.popleft()
-        for v, cap in residual[u].items():
+    queue = deque([source])
+    while queue:
+        u = queue.popleft()
+        for v, cap in res[u].items():
             if cap > 0 and v not in reachable:
                 reachable.add(v)
-                q.append(v)
-    cut_edges = [(u, v, cap) for u, v, cap in edges if u in reachable and v not in reachable]
-    print(f"Минимальный разрез: S'={sorted(reachable, key=str)}, рёбра={[f'{u}->{v}({c})' for u,v,c in cut_edges]}")
-    return total_flow
+                queue.append(v)
+    cut = [(u, v, cap) for u in graph for v, cap in graph[u]
+           if u in reachable and v not in reachable]
+    print("минимальный разрез: " + ", ".join(f"{u}->{v} ({cap})" for u, v, cap in cut))
+    return total
 
+
+def task_1():
+    print("Задание 1. Наибольший поток из вершины 1 в вершину 6")
+    graph = {
+        "1": [("2", 3), ("4", 5)],
+        "2": [("3", 5)],
+        "3": [("5", 6), ("6", 5)],
+        "4": [("2", 4), ("5", 2)],
+        "5": [("6", 7)],
+        "6": [],
+    }
+    max_flow(graph, "1", "6")
+
+
+def task_2():
+    print("Задание 2. Максимальный поток из S в T")
+    graph = {
+        "S": [("A", 10), ("B", 5)],
+        "A": [("C", 8)],
+        "B": [("D", 6)],
+        "C": [("E", 6), ("D", 3)],
+        "D": [("F", 5)],
+        "E": [("F", 8)],
+        "F": [("T", 10)],
+        "T": [],
+    }
+    max_flow(graph, "S", "T")
+
+
+def task_3():
+    print("Задание 3. Наибольший поток из S в T")
+    graph = {
+        "S": [("A", 12), ("B", 7)],
+        "A": [("C", 5)],
+        "B": [("C", 3)],
+        "C": [("E", 6), ("D", 10)],
+        "D": [("E", 5), ("F", 4)],
+        "E": [("F", 5)],
+        "F": [("T", 7)],
+        "T": [],
+    }
+    max_flow(graph, "S", "T")
+
+
+def task_4():
+    print("Повышенная трудность 1. Наибольший поток из вершины 1 в вершину 9")
+    graph = {
+        "1": [("2", 28)],
+        "2": [("3", 23), ("7", 5)],
+        "3": [("5", 23), ("4", 19), ("7", 47)],
+        "4": [("5", 46), ("6", 12)],
+        "5": [("1", 41), ("9", 21)],
+        "6": [("9", 17)],
+        "7": [("8", 11)],
+        "8": [("9", 43)],
+        "9": [],
+    }
+    max_flow(graph, "1", "9")
+
+
+def task_5():
+    print("Повышенная трудность 2. Максимальный поток из S в T")
+    graph = {
+        "S": [("A", 9), ("B", 7)],
+        "A": [("C", 4)],
+        "B": [("D", 6)],
+        "C": [("E", 8)],
+        "D": [("E", 5)],
+        "E": [("F", 7)],
+        "F": [("G", 9)],
+        "G": [("T", 10)],
+        "T": [],
+    }
+    max_flow(graph, "S", "T")
+
+
+def task_6():
+    print("Повышенная трудность 3. Максимальный поток из S в T")
+    graph = {
+        "S": [("A", 10), ("B", 15)],
+        "A": [("C", 10), ("D", 5)],
+        "B": [("D", 10), ("E", 10)],
+        "C": [("F", 10)],
+        "D": [("F", 10), ("G", 5)],
+        "E": [("G", 10), ("H", 5)],
+        "F": [("I", 10)],
+        "G": [("I", 10), ("J", 5)],
+        "H": [("J", 10)],
+        "I": [("K", 15), ("T", 5)],
+        "J": [("K", 10), ("T", 7)],
+        "K": [("T", 10)],
+        "T": [],
+    }
+    max_flow(graph, "S", "T")
+
+
+def task_7():
+    print("Повышенная трудность 4. Эдмондс-Карп: поток, остаточная сеть на каждом шаге")
+    graph = {
+        "S": [("A", 10), ("B", 5)],
+        "A": [("C", 9)],
+        "B": [("C", 4), ("D", 8)],
+        "C": [("T", 10)],
+        "D": [("T", 10)],
+        "T": [],
+    }
+    max_flow(graph, "S", "T", bfs=True)
+
+
+TASKS = [task_1, task_2, task_3, task_4, task_5, task_6, task_7]
 
 if __name__ == "__main__":
-    # Задания для самостоятельного решения
-    max_flow(
-        ["1", "2", "3", "4", "5", "6"],
-        [
-            ("1", "2", 3), ("1", "4", 5), ("4", "2", 4), ("2", "3", 5),
-            ("4", "5", 2), ("3", "5", 6), ("3", "6", 5), ("5", "6", 7),
-        ],
-        "1", "6", title="Самостоятельное задание 1 (Форд-Фалкерсон)"
-    )
-
-    max_flow(
-        ["S", "A", "B", "C", "D", "E", "F", "T"],
-        [
-            ("S", "A", 10), ("S", "B", 5), ("A", "C", 8), ("B", "D", 6),
-            ("C", "E", 6), ("C", "D", 3), ("D", "F", 5), ("E", "F", 8), ("F", "T", 10),
-        ],
-        "S", "T", title="Самостоятельное задание 2 (Форд-Фалкерсон)"
-    )
-
-    max_flow(
-        ["S", "A", "B", "C", "D", "E", "F", "T"],
-        [
-            ("S", "A", 12), ("S", "B", 7), ("A", "C", 5), ("B", "C", 3),
-            ("C", "E", 6), ("C", "D", 10), ("D", "E", 5), ("D", "F", 4),
-            ("E", "F", 5), ("F", "T", 7),
-        ],
-        "S", "T", title="Самостоятельное задание 3 (Форд-Фалкерсон)"
-    )
-
-    # Задания повышенной трудности
-    max_flow(
-        ["1", "2", "3", "4", "5", "6", "7", "8", "9"],
-        [
-            ("1", "2", 28), ("5", "1", 41), ("2", "3", 23), ("2", "7", 5),
-            ("3", "5", 23), ("3", "4", 19), ("3", "7", 47), ("4", "5", 46),
-            ("4", "6", 12), ("5", "9", 21), ("6", "9", 17), ("7", "8", 11),
-            ("8", "9", 43),
-        ],
-        "1", "9", title="Повышенная трудность 1 (Форд-Фалкерсон)"
-    )
-
-    max_flow(
-        ["S", "A", "B", "C", "D", "E", "F", "G", "T"],
-        [
-            ("S", "A", 9), ("S", "B", 7), ("A", "C", 4), ("B", "D", 6),
-            ("C", "E", 8), ("D", "E", 5), ("E", "F", 7), ("F", "G", 9), ("G", "T", 10),
-        ],
-        "S", "T", title="Повышенная трудность 2 (Форд-Фалкерсон)"
-    )
-
-    max_flow(
-        ["S", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "T"],
-        [
-            ("S", "A", 10), ("S", "B", 15),
-            ("A", "C", 10), ("A", "D", 5),
-            ("B", "D", 10), ("B", "E", 10),
-            ("C", "F", 10), ("D", "F", 10), ("D", "G", 5),
-            ("E", "G", 10), ("E", "H", 5),
-            ("F", "I", 10), ("G", "I", 10), ("G", "J", 5), ("H", "J", 10),
-            ("I", "K", 15), ("I", "T", 5), ("J", "K", 10), ("J", "T", 7), ("K", "T", 10),
-        ],
-        "S", "T", title="Повышенная трудность 3 (Форд-Фалкерсон)"
-    )
-
-    max_flow(
-        ["S", "A", "B", "C", "D", "T"],
-        [
-            ("S", "A", 10), ("S", "B", 5), ("A", "C", 9),
-            ("B", "C", 4), ("B", "D", 8), ("C", "T", 10), ("D", "T", 10),
-        ],
-        "S", "T", use_bfs=True, title="Повышенная трудность 4 (Эдмондс-Карп)"
-    )
+    if len(sys.argv) > 1:
+        TASKS[int(sys.argv[1]) - 1]()
+    else:
+        for task in TASKS:
+            task()
+            print()
